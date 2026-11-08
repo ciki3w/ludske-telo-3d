@@ -1,6 +1,6 @@
 # Ľudské telo 3D
 
-Interaktívny 3D model ľudského tela na biológiu pre 8. ročník ZŠ.
+Interaktívny 3D model ľudského tela na biológiu pre ZŠ.
 
 **Spustiť:** https://ciki3w.github.io/ludske-telo-3d/
 
