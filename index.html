@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Ľudské telo 3D</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Ctext y=%22.9em%22 font-size=%2290%22%3E🫀%3C/text%3E%3C/svg%3E">
 <style>
   :root{
     --bg1:#0f1a2e; --bg2:#060a14;
@@ -132,7 +133,12 @@
     .minfo{border-left:none;border-top:1px solid var(--border);padding:18px}
     .minfo h2{font-size:22px}
   }
-  #loading{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:30;font-size:18px;color:var(--muted);
+  #loading .lbox{text-align:center;max-width:420px;padding:20px}
+  #loading .lic{font-size:46px;margin-bottom:10px}
+  #loading .lbar{height:8px;border-radius:8px;background:#1b2742;margin:14px 0 10px;overflow:hidden}
+  #loading .lbar i{display:block;height:100%;width:0;background:linear-gradient(90deg,#4fd1c5,#f6ad55);transition:width .2s}
+  #loading small{font-size:12px;color:#6c7c96}
+  #loading{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:30;font-size:16px;color:var(--muted);
     background:radial-gradient(ellipse at 50% 40%,var(--bg1),var(--bg2) 75%)}
 </style>
 </head>
@@ -144,7 +150,7 @@
 <aside id="side" class="panel">
   <header>
     <div class="logo">🧍</div>
-    <div><h1>Ľudské telo 3D</h1><p>Biológia · 8. ročník ZŠ</p></div>
+    <div><h1>Ľudské telo 3D</h1><p>Biológia · anatómia človeka</p></div>
   </header>
   <div class="scroll">
     <h2>Sústavy orgánov</h2>
@@ -178,7 +184,8 @@
   </div>
   <footer>
     🖱️ <b>Ťahaj</b> – otáčanie · <b>koliesko</b> – zväčšenie · <b>pravé tlačidlo</b> – posun<br>
-    👆 <b>Klikni na orgán</b> – zobrazí sa zväčšený s popisom
+    👆 <b>Klikni na orgán</b> – zobrazí sa zväčšený s popisom<br>
+    <span style="opacity:.75">3D dáta: <a href="https://dbarchive.biosciencedbc.jp/en/bodyparts3d/" target="_blank" rel="noopener" style="color:inherit">BodyParts3D</a> © DBCLS, licencia CC BY-SA 2.1 JP</span>
   </footer>
 </aside>
 
@@ -214,18 +221,20 @@
     <div class="minfo" id="mInfo"></div>
   </div>
 </div>
-<div id="loading">Načítavam 3D model ľudského tela…</div>
+<div id="loading"><div class="lbox"><div class="lic">🫀</div><div id="loadTxt">Načítavam anatomický model…</div><div class="lbar"><i id="loadBar"></i></div><small>Model má asi 10 MB – prvé načítanie môže chvíľu trvať.</small></div></div>
 
 <script type="importmap">
 { "imports": {
   "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
-  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/",
+  "three-mesh-bvh": "https://cdn.jsdelivr.net/npm/three-mesh-bvh@0.7.8/build/index.module.js"
 } }
 </script>
 <script type="module">
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { computeBoundsTree, disposeBoundsTree, acceleratedRaycast } from 'three-mesh-bvh';
 
 /* ======================================================================
    ÚDAJE – sústavy a orgány
@@ -254,10 +263,15 @@ const ORG = {
 
   /* --- KOSTRA --- */
   lebka:{s:'kostra',n:'Lebka',lat:'cranium',
-    p:'Lebka chráni mozog a zmyslové orgány hlavy. Delí sa na mozgovú časť (mozgovňu) a tvárovú časť. Kosti lebky sú navzájom pevne spojené švami.',
-    f:['Chráni mozog, oči a vnútorné ucho','Tvorí kostru tváre','Sánka umožňuje hryzenie a žuvanie'],
-    x:'Jedinou pohyblivou kosťou lebky je sánka. Novorodenec má v lebke mäkké miesta – fontanely, ktoré sa uzavrú zhruba do 2 rokov.',
+    p:'Lebka chráni mozog a zmyslové orgány hlavy. Delí sa na mozgovú časť (mozgovňu – napr. čelová, temenné, spánkové, záhlavová kosť) a tvárovú časť (napr. horná čeľusť, lícne a nosové kosti). Kosti lebky sú navzájom pevne spojené švami.',
+    f:['Chráni mozog, oči a vnútorné ucho','Tvorí kostru tváre a ústnej dutiny','Má otvory pre prechod nervov a ciev – najväčší je záhlavný otvor pre miechu'],
+    x:'Novorodenec má v lebke mäkké miesta – fontanely, ktoré sa uzavrú zhruba do 2 rokov.',
     h:'Kostená schránka, ktorá chráni mozog.'},
+  sanka:{s:'kostra',n:'Sánka',lat:'mandibula',
+    p:'Sánka (dolná čeľusť) je podkovovitá kosť tvoriaca dolnú časť tváre. V jej zubných lôžkach sú uložené dolné zuby. So spánkovou kosťou tvorí čeľustný kĺb.',
+    f:['Umožňuje hryzenie, žuvanie a reč','Je miestom úponu žuvacích svalov'],
+    x:'Sánka je jediná pohyblivá kosť lebky a zároveň najväčšia a najpevnejšia kosť tváre.',
+    h:'Jediná pohyblivá kosť lebky.'},
   chrbtica:{s:'kostra',n:'Chrbtica',lat:'columna vertebralis',
     p:'Chrbtica je osou kostry. Tvorí ju 33 – 34 stavcov: 7 krčných, 12 hrudníkových, 5 driekových, krížová kosť (5 zrastených stavcov) a kostrč. Medzi stavcami sú chrupkové medzistavcové platničky.',
     f:['Nesie hmotnosť hlavy a trupu','Chráni miechu uloženú v chrbticovom kanáli','Jej dvojité esovité zakrivenie tlmí nárazy pri chôdzi a skákaní'],
@@ -346,20 +360,20 @@ const ORG = {
     x:'Keď hýbeš prstami, pracujú hlavne svaly v predlaktí – šľachy fungujú ako lanká bábky.',
     h:'Svaly, ktoré pomocou dlhých šliach hýbu prstami.'},
   brusne:{s:'svaly',n:'Brušné svaly',lat:'musculi abdominis',
-    p:'Brušnú stenu tvorí priamy brušný sval, šikmé svaly a priečny sval. Pod nimi nie sú kosti, preto chránia orgány brucha.',
-    f:['Ohýbajú a otáčajú trup','Chránia orgány brušnej dutiny','Tvoria brušný lis – pomáhajú pri kašľaní a vyprázdňovaní'],
+    p:'Brušnú stenu tvorí priamy brušný sval, vonkajší a vnútorný šikmý sval a priečny brušný sval. Pod nimi nie sú kosti, preto chránia orgány brucha. Na modeli je zobrazený vonkajší šikmý brušný sval, ktorý leží najviac navrchu.',
+    f:['Ohýbajú a otáčajú trup','Chránia orgány brušnej dutiny','Tvoria brušný lis – pomáhajú pri kašľaní, výdychu a vyprázdňovaní'],
     x:'Priamy brušný sval je rozdelený šľachovitými prepážkami – preto vzniká vzhľad „šesťbalíčka“.',
     h:'Svaly, ktoré chránia brucho a ohýbajú trup.'},
+  pilovity:{s:'svaly',n:'Predný pílovitý sval',lat:'musculus serratus anterior',
+    p:'Sval na boku hrudníka. Začína zubovitými cípmi na 1. – 9. rebre a upína sa na vnútorný okraj lopatky.',
+    f:['Priťahuje lopatku k hrudníku a posúva ju dopredu','Umožňuje zdvihnúť ruku nad hlavu','Pomáha pri hlbokom nádychu'],
+    x:'Podľa zúbkov, ktoré pripomínajú pílu, dostal svoje meno. Boxeri ho používajú pri údere – preto sa mu hovorí aj „boxerský sval“.',
+    h:'Zúbkovitý sval na boku hrudníka, ktorý drží lopatku.'},
   trapezovy:{s:'svaly',n:'Trapézový sval',lat:'musculus trapezius',
     p:'Plochý sval kosoštvorcového tvaru na hornej časti chrbta a na šiji.',
     f:['Dvíha a sťahuje plecia','Priťahuje lopatky k chrbtici','Pomáha držať hlavu vzpriamenú'],
     x:'Pri strese a sedení pri počítači sa často napína – preto „bolí za krkom“.',
     h:'Sval na šiji a chrbte, ktorý dvíha plecia.'},
-  najsirsi:{s:'svaly',n:'Najširší sval chrbta',lat:'musculus latissimus dorsi',
-    p:'Najširší sval ľudského tela. Pokrýva dolnú a bočnú časť chrbta a upína sa na ramennú kosť.',
-    f:['Zapaží a pripaží ruku','Ťahá telo nahor pri zhybe a lezení'],
-    x:'Plavci a horolezci ho majú veľmi vyvinutý – chrbát potom vyzerá ako písmeno V.',
-    h:'Najširší sval tela, pracuje pri zhyboch.'},
   sedaci:{s:'svaly',n:'Veľký sedací sval',lat:'musculus gluteus maximus',
     p:'Mohutný sval, ktorý tvorí zadok. Je to najobjemnejší sval ľudského tela.',
     f:['Vystiera nohu v bedrovom kĺbe','Umožňuje vzpriamený postoj, chôdzu do schodov a beh'],
@@ -375,6 +389,16 @@ const ORG = {
     f:['Ohýbajú nohu v kolene','Vystierajú nohu v bedre'],
     x:'Pri šprinte sú veľmi namáhané – ich natiahnutie je častým športovým zranením.',
     h:'Svaly na zadnej strane stehna, ktoré ohýbajú koleno.'},
+  krajciarsky:{s:'svaly',n:'Krajčírsky sval',lat:'musculus sartorius',
+    p:'Najdlhší sval ľudského tela. Ťahá sa šikmo cez prednú stranu stehna od bedrovej kosti až na vnútornú stranu píšťaly.',
+    f:['Ohýba nohu v bedre aj v kolene','Vytáča stehno von – umožňuje sedieť „po turecky“'],
+    x:'Meno dostal podľa krajčírov, ktorí kedysi pri šití sedávali s prekríženými nohami.',
+    h:'Najdlhší sval tela, ide šikmo cez stehno.'},
+  predny_pistalovy:{s:'svaly',n:'Predný píšťalový sval',lat:'musculus tibialis anterior',
+    p:'Sval na prednej strane predkolenia vedľa píšťaly. Jeho šľacha prechádza cez členok na vnútornú stranu nohy.',
+    f:['Dvíha špičku nohy nahor (dorzálna flexia)','Pri chôdzi zabraňuje tomu, aby špička zakopávala o zem','Podopiera klenbu nohy'],
+    x:'Je antagonistom lýtkového svalu – jeden špičku dvíha, druhý ju tlačí nadol.',
+    h:'Sval na holeni, ktorý dvíha špičku nohy.'},
   lytkovy:{s:'svaly',n:'Trojhlavý sval lýtka',lat:'musculus triceps surae',
     p:'Tvorí lýtko. Dole prechádza do Achillovej šľachy, ktorá sa upína na pätovú kosť.',
     f:['Zdvíha pätu – postaví nás na špičky','Odráža telo pri chôdzi, behu a skoku'],
@@ -385,6 +409,11 @@ const ORG = {
     f:['Otáča hlavu na opačnú stranu','Ukláňa hlavu k plecu','Pri stiahnutí oboch naraz predkláňa hlavu'],
     x:'Keď otočíš hlavu doľava, na krku sa ti výrazne vyrysuje pravý kývač.',
     h:'Šikmý sval na krku, ktorý otáča hlavou.'},
+  medzirebrove:{s:'svaly',n:'Medzirebrové svaly',lat:'musculi intercostales',
+    p:'Tenké svaly medzi susednými rebrami. Na modeli sú zobrazené vonkajšie medzirebrové svaly, pod nimi ležia vnútorné.',
+    f:['Vonkajšie medzirebrové svaly dvíhajú rebrá pri nádychu','Vnútorné pomáhajú pri usilovnom výdychu','Spevňujú stenu hrudníka'],
+    x:'Spolu s bránicou patria medzi hlavné dýchacie svaly – pri pokojnom dýchaní pracujú bez toho, aby sme na to mysleli.',
+    h:'Svaly medzi rebrami, ktoré dvíhajú hrudník pri nádychu.'},
 
   /* --- TRÁVIACA --- */
   zuby:{s:'travenie',n:'Zuby',lat:'dentes',
@@ -496,13 +525,43 @@ const ORG = {
     f:['Odstraňuje staré červené krvinky','Tvorí biele krvinky a pomáha v boji proti infekciám','Uchováva zásobu krvi'],
     x:'Červená krvinka žije asi 120 dní. Bez sleziny sa dá žiť – jej úlohu čiastočne prevezmú iné orgány.',
     h:'Orgán, ktorý odstraňuje staré červené krvinky.'},
+  plucne_cievy:{s:'obeh',n:'Pľúcne cievy (malý krvný obeh)',lat:'vasa pulmonalia',
+    p:'Pľúcnica vychádza z pravej komory a vedie odkysličenú krv do pľúc. Tam sa rozvetvuje až na vlásočnice okolo pľúcnych mechúrikov. Okysličená krv sa vracia štyrmi pľúcnymi žilami do ľavej predsiene.',
+    f:['Privádzajú krv do pľúc, kde sa okysličí','Odvádzajú okysličenú krv späť do srdca'],
+    x:'Malý krvný obeh je výnimka: v pľúcnici (tepne) tečie odkysličená krv a v pľúcnych žilách okysličená.',
+    h:'Cievy malého krvného obehu medzi srdcom a pľúcami.'},
 
   /* --- NERVOVÁ --- */
-  mozog:{s:'nerv',n:'Veľký (koncový) mozog',lat:'cerebrum',
-    p:'Najväčšia časť mozgu, tvorená dvoma hemisférami. Ich povrch – mozgová kôra – je zvrásnený do závitov a brázd. Celý mozog váži asi 1,3 – 1,4 kg.',
-    f:['Riadi vedomé pohyby','Spracúva informácie zo zmyslov','Je sídlom myslenia, pamäti, reči a učenia'],
-    x:'Mozog tvorí asi 2 % hmotnosti tela, ale spotrebuje asi 20 % energie. Obsahuje okolo 86 miliárd neurónov.',
-    h:'Riadiace centrum myslenia, pamäti a reči.'},
+  mozog_celovy:{s:'nerv',n:'Čelový lalok',lat:'lobus frontalis',
+    p:'Najväčší lalok koncového mozgu, uložený vpredu pod čelovou kosťou. Od temenného laloku ho oddeľuje centrálna (Rolandova) brázda. Jeho zadný závit – precentrálny – je primárne motorické centrum.',
+    f:['Riadi vedomé pohyby (motorická kôra)','Plánovanie, rozhodovanie, sústredenie a ovládanie správania','Brocovo centrum (zvyčajne vľavo) riadi tvorbu reči'],
+    x:'Čelový lalok dozrieva najneskôr – až okolo 25. roku života. Aj preto sa tínedžeri niekedy rozhodujú impulzívnejšie.',
+    h:'Lalok mozgu, ktorý plánuje, rozhoduje a riadi vedomé pohyby.'},
+  mozog_temenny:{s:'nerv',n:'Temenný lalok',lat:'lobus parietalis',
+    p:'Lalok koncového mozgu pod temennou kosťou, za centrálnou brázdou. Jeho predný závit – postcentrálny – je primárne centrum telesného cítenia.',
+    f:['Spracúva dotyk, tlak, teplo, chlad a bolesť','Vnímanie polohy tela a orientácia v priestore','Podieľa sa na čítaní a počítaní'],
+    x:'Každá časť tela má v postcentrálnom závite „svoje“ miesto. Ruky a pery zaberajú obrovskú plochu – preto sú také citlivé.',
+    h:'Lalok mozgu, ktorý spracúva dotyk a vnímanie tela.'},
+  mozog_spankovy:{s:'nerv',n:'Spánkový lalok',lat:'lobus temporalis',
+    p:'Lalok koncového mozgu na boku hlavy pod spánkovou kosťou. Od čelového a temenného laloku ho oddeľuje bočná (Sylviova) brázda, v ktorej hĺbke leží ostrovček (insula).',
+    f:['Obsahuje sluchové centrum','Wernickeho centrum zabezpečuje porozumenie reči','Spolu s hipokampom sa podieľa na tvorbe pamäti'],
+    x:'Keď počuješ známu pesničku, spánkový lalok si ju dokáže „prehrať“ aj bez zvuku.',
+    h:'Lalok mozgu so sluchovým centrom a porozumením reči.'},
+  mozog_zahlavovy:{s:'nerv',n:'Záhlavový lalok',lat:'lobus occipitalis',
+    p:'Najmenší lalok koncového mozgu, uložený vzadu pod záhlavovou kosťou.',
+    f:['Obsahuje zrakové centrum – spracúva informácie z očí','Rozoznáva tvary, farby a pohyb'],
+    x:'Zrakové centrum je na opačnom konci hlavy ako oči. Preto aj úder do zátylku môže spôsobiť, že „vidíš hviezdičky“.',
+    h:'Lalok mozgu so zrakovým centrom.'},
+  limbicky:{s:'nerv',n:'Limbický systém a medzimozog',lat:'systema limbicum, diencephalon',
+    p:'Hlboko uložené časti mozgu: cingulárny závit, hipokampus, hypotalamus a ďalšie. Medzimozog leží medzi koncovým mozgom a mozgovým kmeňom.',
+    f:['Hipokampus ukladá nové spomienky do dlhodobej pamäti','Limbický systém riadi emócie (strach, radosť) a motiváciu','Hypotalamus riadi telesnú teplotu, hlad, smäd a činnosť hypofýzy'],
+    x:'Hypotalamus je veľký asi ako mandľa, a predsa je „termostatom“ celého tela.',
+    h:'Hlboké časti mozgu, ktoré riadia emócie, pamäť a hlad.'},
+  komory:{s:'nerv',n:'Mozgové komory',lat:'ventriculi cerebri',
+    p:'Sústava dutín v mozgu – dve bočné komory, tretia a štvrtá komora, ktoré spája Sylviov kanálik. Sú vyplnené mozgovomiechovým mokom.',
+    f:['Tvoria a vedú mozgovomiechový mok','Mok chráni mozog pred otrasmi a odvádza odpadové látky'],
+    x:'Za deň sa vytvorí asi pol litra mozgovomiechového moku – vymení sa niekoľkokrát denne.',
+    h:'Dutiny v mozgu vyplnené mozgovomiechovým mokom.'},
   mozocek:{s:'nerv',n:'Mozoček',lat:'cerebellum',
     p:'Mozoček leží v zadnej časti lebky pod veľkým mozgom. Jeho povrch má jemné rovnobežné závity.',
     f:['Koordinuje (zlaďuje) pohyby','Udržiava rovnováhu a svalové napätie'],
@@ -519,7 +578,7 @@ const ORG = {
     x:'Poranenie miechy môže spôsobiť ochrnutie častí tela pod miestom poranenia.',
     h:'Povrazec v chrbtici, ktorý vedie vzruchy medzi mozgom a telom.'},
   nervy:{s:'nerv',n:'Nervy',lat:'nervi',
-    p:'Nervy sú zväzky nervových vlákien, ktoré spájajú mozog a miechu so všetkými časťami tela. Najdlhší a najhrubší je sedací nerv v nohe.',
+    p:'Nervy sú zväzky nervových vlákien, ktoré spájajú mozog a miechu so všetkými časťami tela. Z mozgu vychádza 12 párov hlavových nervov, z miechy 31 párov miechových nervov. Na modeli sú zobrazené najmä hlavové nervy vrátane zrakového nervu.',
     f:['Dostredivé nervy vedú vzruchy zo zmyslov do mozgu','Odstredivé nervy vedú pokyny z mozgu do svalov a žliaz'],
     x:'Vzruch sa v niektorých nervoch šíri rýchlosťou až okolo 100 m/s.',
     h:'Zväzky vlákien, ktoré vedú vzruchy po celom tele.'},
@@ -531,7 +590,7 @@ const ORG = {
     x:'Obraz na sietnici je prevrátený hore nohami – mozog ho „otočí“ správne.',
     h:'Orgán zraku s tyčinkami a čapíkmi.'},
   ucho:{s:'zmysly',n:'Ucho',lat:'auris',
-    p:'Ucho sa delí na vonkajšie (ušnica a zvukovod), stredné (bubienok a sluchové kostičky – kladivko, nákovka, strmienok) a vnútorné ucho (slimák a polkruhovité kanáliky).',
+    p:'Ucho sa delí na vonkajšie (ušnica a zvukovod), stredné (bubienok a sluchové kostičky – kladivko, nákovka, strmienok) a vnútorné ucho (slimák a polkruhovité kanáliky). Na modeli je zobrazená ušnica.',
     f:['Slimák premieňa zvuk na nervové vzruchy – sluch','Polkruhovité kanáliky vnímajú polohu a pohyb hlavy – rovnováha'],
     x:'Strmienok v strednom uchu je najmenšia kosť ľudského tela – meria asi 3 mm.',
     h:'Orgán sluchu a rovnováhy.'},
@@ -616,623 +675,96 @@ addLights(scene);
 }
 
 /* ======================================================================
-   POMOCNÉ FUNKCIE PRE GEOMETRIU
+   NAČÍTANIE ANATOMICKÉHO MODELU (BodyParts3D)
    ====================================================================== */
 const V3 = THREE.Vector3;
 const A = a => a.isVector3 ? a.clone() : new V3(a[0], a[1], a[2]);
-function rng(seed){ return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
-  t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
+THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
+THREE.Mesh.prototype.raycast = acceleratedRaycast;
 
-// trubica s premenlivým polomerom pozdĺž krivky
-function sweep(pts, r, o = {}){
-  const closed = !!o.closed;
-  const curve = pts.isCurve ? pts : new THREE.CatmullRomCurve3(pts.map(A), closed, 'centripetal');
-  const len = curve.getLength();
-  const T = o.seg ?? Math.min(900, Math.max(6, Math.round(len * (o.density ?? 260))));
-  const R = o.rad ?? 12;
-  const fr = curve.computeFrenetFrames(T, closed);
-  const rad = typeof r === 'function' ? r : () => r;
-  const pos = [], nor = [], uv = [], idx = [];
-  const P = new V3(), n = new V3();
-  for (let i = 0; i <= T; i++){
-    const t = i / T; curve.getPointAt(t, P); const rr = rad(t);
-    for (let j = 0; j <= R; j++){
-      const a = j / R * Math.PI * 2;
-      n.copy(fr.normals[i]).multiplyScalar(Math.cos(a)).addScaledVector(fr.binormals[i], Math.sin(a));
-      pos.push(P.x + n.x*rr, P.y + n.y*rr, P.z + n.z*rr); nor.push(n.x, n.y, n.z); uv.push(j / R, t);
-    }
-  }
-  for (let i = 0; i < T; i++) for (let j = 0; j < R; j++){
-    const a = i*(R+1) + j, b = a + R + 1;
-    idx.push(a, a+1, b, b, a+1, b+1);
-  }
-  if (!closed && o.caps !== false){
-    for (const end of [0, T]){
-      const t = end / T; curve.getPointAt(t, P); const tg = fr.tangents[end]; const sg = end === 0 ? -1 : 1; const rr = rad(t);
-      const c = pos.length / 3;
-      pos.push(P.x, P.y, P.z); nor.push(tg.x*sg, tg.y*sg, tg.z*sg); uv.push(0.5, 0.5);
-      for (let j = 0; j <= R; j++){
-        const a = j / R * Math.PI * 2;
-        n.copy(fr.normals[end]).multiplyScalar(Math.cos(a)).addScaledVector(fr.binormals[end], Math.sin(a));
-        pos.push(P.x + n.x*rr, P.y + n.y*rr, P.z + n.z*rr); nor.push(tg.x*sg, tg.y*sg, tg.z*sg); uv.push(j / R, 0);
-      }
-      for (let j = 0; j < R; j++) end === 0 ? idx.push(c, c+2+j, c+1+j) : idx.push(c, c+1+j, c+2+j);
-    }
-  }
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
-  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
-  g.setIndex(idx);
-  return g;
-}
-// zdeformovaná guľa (elipsoid)
-function blob(rx, ry, rz, def, w = 40, h = 28){
-  const g = new THREE.SphereGeometry(1, w, h); const p = g.attributes.position; const v = new V3();
-  for (let i = 0; i < p.count; i++){ v.fromBufferAttribute(p, i); if (def) def(v); p.setXYZ(i, v.x*rx, v.y*ry, v.z*rz); }
-  g.computeVertexNormals(); return g;
-}
-const _q = new THREE.Quaternion(), _e = new THREE.Euler(), _m = new THREE.Matrix4();
-function tf(g, p = [0,0,0], r = [0,0,0], s = [1,1,1]){
-  _e.set(r[0], r[1], r[2]); _q.setFromEuler(_e);
-  _m.compose(new V3(...p), _q, new V3(...s)); g.applyMatrix4(_m); return g;
-}
-const mir = g => g.clone().scale(-1, 1, 1);
-const g2 = x => Math.exp(-x*x);
-const sq = (a, e) => Math.sign(a)*Math.pow(Math.abs(a), e);
-const sides = fn => { fn(1); fn(-1); };
-const bump = (t, a, b) => Math.pow(Math.max(0, Math.sin(Math.PI * Math.min(1, Math.max(0, (t - a) / (b - a))))), 0.7);
-
-// textúra svalových vlákien
-function fiberTex(){
-  const c = document.createElement('canvas'); c.width = 128; c.height = 4; const g = c.getContext('2d');
-  for (let x = 0; x < 128; x++){ const v = 205 + Math.random()*50 | 0; g.fillStyle = `rgb(${v},${v},${v})`; g.fillRect(x, 0, 1, 4); }
-  for (let x = 0; x < 128; x += 5){ g.fillStyle = 'rgba(60,0,0,.35)'; g.fillRect(x, 0, 1, 4); }
-  const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(3, 1); t.colorSpace = THREE.SRGBColorSpace; return t;
-}
-const FIBER = fiberTex();
-
-/* ---- register časti ---- */
-const parts = new Map();
-function put(id, geo, color, opts = {}){
-  const key = id + '|' + color + '|' + (opts.k || '');
-  if (!parts.has(key)) parts.set(key, { id, color, opts, geos:[] });
-  parts.get(key).geos.push(geo);
-}
-
-/* ======================================================================
-   STAVBA MODELU
-   ====================================================================== */
-const BONE = '#ece2c6', CART = '#bcd6e0', SKINC = '#e7b494';
-const MUS = '#b8413a', TENDON = '#eadfcf';
-const ART = '#d8323c', VEIN = '#3557c4', NERVE = '#f1c94a';
-
-/* ---------------- KOŽA ---------------- */
-const prof = [[0.0,0.80],[0.07,0.803],[0.13,0.82],[0.158,0.86],[0.168,0.92],[0.158,0.98],[0.141,1.04],[0.137,1.08],
-  [0.145,1.15],[0.158,1.24],[0.167,1.33],[0.172,1.40],[0.155,1.445],[0.1,1.47],[0.055,1.485]];
-const ZS = 0.74; // splošťenie trupu spredu-dozadu
-function skinR(y){ for (let i = 1; i < prof.length; i++){ if (y <= prof[i][1]){ const [r0,y0] = prof[i-1], [r1,y1] = prof[i]; return r0 + (r1-r0)*(y-y0)/(y1-y0); } } return 0.05; }
-{
-  const torso = new THREE.LatheGeometry(prof.map(([r,y]) => new THREE.Vector2(r, y)), 64);
-  torso.scale(1, 1, ZS);
-  put('koza', torso, SKINC, { k:'skin' });
-  put('koza', tf(new THREE.CylinderGeometry(0.046, 0.05, 0.11, 32, 1, true), [0, 1.525, -0.008]), SKINC, { k:'skin' });
-  put('koza', tf(blob(0.079, 0.106, 0.098, v => { if (v.y < 0){ const k = 1 - 0.28*v.y*v.y; v.x *= k; } if (v.y < -0.6 && v.z > 0) v.z *= 1.04; }, 56, 40), [0, 1.632, 0.004]), SKINC, { k:'skin' });
-  put('koza', tf(blob(0.011, 0.021, 0.014, v => { if (v.z < 0) v.z *= 0.4; }), [0, 1.615, 0.098], [0.25, 0, 0]), SKINC, { k:'skin' });
-  sides(s => {
-    put('koza', tf(new THREE.SphereGeometry(0.052, 28, 20), [s*0.172, 1.405, -0.005]), SKINC, { k:'skin' });
-    put('koza', sweep([[s*0.183,1.42,-0.005],[s*0.212,1.27,-0.008],[s*0.236,1.13,-0.004],[s*0.262,1.0,0.008],[s*0.292,0.868,0.01]],
-      t => t < 0.5 ? 0.043 - 0.009*(t/0.5) : 0.034 - 0.01*((t-0.5)/0.5) + 0.004*bump(t,0.5,0.75), { rad:20 }), SKINC, { k:'skin' });
-    // ruka – dlaň a prsty
-    put('koza', tf(blob(0.034, 0.042, 0.014), [s*0.294, 0.815, 0.01]), SKINC, { k:'skin' });
-    const fx = [-0.022, -0.0075, 0.0075, 0.022], fl = [0.058, 0.07, 0.075, 0.07];
-    fx.forEach((x, i) => put('koza', sweep([[s*(0.294+x), 0.79, 0.012],[s*(0.294+x*1.12), 0.79-fl[i], 0.016]], 0.0075, { rad:10 }), SKINC, { k:'skin' }));
-    put('koza', sweep([[s*0.312,0.835,0.014],[s*0.333,0.8,0.024],[s*0.35,0.765,0.034]], 0.0085, { rad:10 }), SKINC, { k:'skin' });
-    // noha
-    put('koza', sweep([[s*0.093,0.95,0.0],[s*0.096,0.73,0.006],[s*0.091,0.5,0.0],[s*0.089,0.3,-0.01],[s*0.087,0.075,-0.006]],
-      t => t < 0.47 ? 0.078 - 0.026*(t/0.47) : 0.05 + 0.008*bump(t,0.47,0.82) - 0.018*Math.max(0,(t-0.7)/0.3), { rad:24 }), SKINC, { k:'skin' });
-    put('koza', tf(blob(0.041, 0.034, 0.112, v => { if (v.z > 0){ v.y = v.y*(1-0.45*v.z) - 0.12*v.z; } if (v.y < -0.55) v.y = -0.55 + (v.y+0.55)*0.3; }), [s*0.088, 0.034, 0.045]), SKINC, { k:'skin' });
-  });
-}
-
-/* ---------------- KOSTRA ---------------- */
-// lebka
-put('lebka', tf(blob(0.072, 0.08, 0.092, v => { if (v.y < -0.35) v.y = -0.35 + (v.y+0.35)*0.4; v.x *= 1 - 0.08*Math.max(0, v.y); }, 56, 40), [0, 1.655, -0.008]), BONE);
-put('lebka', tf(blob(0.054, 0.045, 0.04, v => { if (v.y < 0) v.x *= 1 + 0.25*v.y; }), [0, 1.598, 0.042]), BONE);
-put('lebka', tf(blob(0.008, 0.012, 0.004), [0, 1.603, 0.081]), '#3a2f2a');
-sides(s => {
-  put('lebka', tf(new THREE.TorusGeometry(0.0145, 0.0035, 8, 28), [s*0.032, 1.636, 0.077]), BONE);
-  put('lebka', tf(blob(0.013, 0.013, 0.004), [s*0.032, 1.636, 0.079]), '#3a2f2a');
-  put('lebka', sweep([[s*0.045,1.612,0.06],[s*0.068,1.613,0.025],[s*0.074,1.618,-0.012]], 0.005, { rad:8 }), BONE);
-});
-{ // sánka – plochá podkova + vetvy
-  const pts = [];
-  for (let k = 0; k <= 24; k++){ const a = -1.35 + 2.7*k/24; pts.push(new THREE.Vector2(0.052*Math.sin(a), -(0.012 + 0.054*Math.cos(a)))); }
-  for (let k = 24; k >= 0; k--){ const a = -1.35 + 2.7*k/24; pts.push(new THREE.Vector2(0.044*Math.sin(a), -(0.014 + 0.046*Math.cos(a)))); }
-  const jg = new THREE.ExtrudeGeometry(new THREE.Shape(pts), { depth:0.012, bevelEnabled:true, bevelThickness:0.003, bevelSize:0.002, bevelSegments:3, curveSegments:4 });
-  jg.rotateX(-Math.PI/2); jg.translate(0, 1.527, 0);
-  put('lebka', jg, BONE);
-  sides(s => {
-    put('lebka', sweep([[s*0.048,1.528,0.022],[s*0.053,1.57,0.0],[s*0.057,1.612,-0.012]], 0.0062, { rad:10 }), BONE);
-    put('lebka', sweep([[s*0.05,1.565,0.004],[s*0.05,1.59,0.012]], 0.004, { rad:8 }), BONE);
-  });
-}
-// zuby
-for (const [y, h] of [[1.567, 1], [1.548, -1]]){
-  for (let k = 0; k < 16; k++){
-    const a = -1.25 + 2.5*k/15; const front = 1 - Math.abs(a)/1.25;
-    const r = 0.0042 - 0.0012*front;
-    const g = new THREE.CylinderGeometry(r, r*0.75, 0.009, 10);
-    tf(g, [0.03*Math.sin(a), y, 0.024 + 0.038*Math.cos(a)], [h > 0 ? Math.PI : 0, 0, 0]);
-    put('zuby', g, '#f6f3e8');
-  }
-}
-
-// chrbtica
-const spine = new THREE.CatmullRomCurve3([[0,1.61,-0.03],[0,1.55,-0.024],[0,1.48,-0.04],[0,1.40,-0.068],[0,1.30,-0.082],
-  [0,1.20,-0.075],[0,1.12,-0.06],[0,1.04,-0.05],[0,0.975,-0.058]].map(A), false, 'centripetal');
-const VERT = [];
-{
-  const L = spine.getLength(), NV = 24, sp = L*0.95/NV;
-  for (let i = 0; i < NV; i++){
-    const t = 0.02 + 0.95*(i + 0.5)/NV;
-    const p = spine.getPointAt(t), up = spine.getTangentAt(t).negate();
-    const r = i < 7 ? 0.0085 + 0.0005*i : i < 19 ? 0.012 + 0.0003*(i-7) : 0.017 + 0.0008*(i-19);
-    VERT.push({ p, r, t });
-    const q = new THREE.Quaternion().setFromUnitVectors(new V3(0,1,0), up);
-    const M = new THREE.Matrix4().compose(p, q, new V3(1,1,1));
-    const h = sp*0.62;
-    const body = new THREE.CylinderGeometry(r, r*1.04, h, 16);
-    const spLen = i < 7 ? r*1.3 : r*1.7;
-    const spinous = tf(new THREE.BoxGeometry(0.005, h*0.8, spLen), [0, -h*0.3, -r*1.3 - spLen*0.5], [0.45, 0, 0]);
-    const arch = tf(new THREE.TorusGeometry(r*0.75, 0.0025, 6, 14, Math.PI), [0, 0, -r*1.25], [Math.PI/2, 0, Math.PI]);
-    const trans = tf(new THREE.BoxGeometry(i < 7 ? r*3.2 : r*3.8, h*0.45, 0.006), [0, 0, -r*1.1]);
-    for (const g of [body, spinous, arch, trans]){ g.applyMatrix4(M); put('chrbtica', g, BONE); }
-    if (i < NV-1){
-      const t2 = 0.02 + 0.95*(i + 1)/NV;
-      const pd = spine.getPointAt(t2), ud = spine.getTangentAt(t2).negate();
-      const disc = new THREE.CylinderGeometry(r*0.96, r*0.98, sp*0.3, 16);
-      disc.applyMatrix4(new THREE.Matrix4().compose(pd, new THREE.Quaternion().setFromUnitVectors(new V3(0,1,0), ud), new V3(1,1,1)));
-      put('chrbtica', disc, CART);
-    }
-  }
-  // krížová kosť a kostrč
-  put('chrbtica', tf(blob(0.042, 0.055, 0.018, v => { const k = 0.5 + 0.5*(v.y+1)/2; v.x *= k; }), [0, 0.925, -0.075], [0.4, 0, 0]), BONE);
-  put('chrbtica', sweep([[0,0.878,-0.088],[0,0.862,-0.08],[0,0.85,-0.068]], t => 0.006 - 0.003*t, { rad:8 }), BONE);
-}
-
-// hrudník – rebrá, chrupky, hrudná kosť
-const RIBPTS = { 1:[], '-1':[] };
-{
-  const W = [0.06,0.085,0.105,0.118,0.128,0.134,0.137,0.138,0.136,0.132,0.124,0.11];
-  const sterY = i => VERT[7+i].p.y - 0.035 - 0.004*i;
-  const sterZ = i => 0.058 + i*0.005;
-  const costal = [[0.03,1.185,0.092],[0.056,1.15,0.088],[0.08,1.118,0.078]];
-  for (let i = 0; i < 12; i++){
-    const vp = VERT[7+i].p, y0 = vp.y + 0.004, w = W[i], d = 0.55*w + 0.025, cz = -0.012;
-    const thMax = i < 7 ? 2.62 : i < 10 ? 2.42 : (i === 10 ? 1.75 : 1.45);
-    const yEnd = i < 7 ? sterY(i) - 0.012 : i < 10 ? costal[i-7][1] - 0.02 : y0 - 0.05;
-    sides(s => {
-      const pts = [[s*0.012, y0, vp.z - 0.004]];
-      for (let k = 0; k <= 12; k++){
-        const u = k/12, th = 0.3 + (thMax - 0.3)*u;
-        pts.push([s*w*Math.sin(th), y0 + (yEnd - y0)*Math.pow(u, 1.4), cz - d*Math.cos(th)]);
-      }
-      RIBPTS[s].push(pts);
-      put('hrudnik', sweep(pts, t => 0.0042*(1 + 0.3*Math.sin(Math.PI*t)), { rad:8, density:300 }), BONE);
-      const e = pts[pts.length-1];
-      if (i < 7){
-        put('hrudnik', sweep([e, [s*0.035, (e[1]+sterY(i))/2, (e[2]+sterZ(i))/2 + 0.012], [s*0.012, sterY(i), sterZ(i)]], 0.0038, { rad:8 }), CART);
-      } else if (i < 10){
-        const c = costal[i-7];
-        put('hrudnik', sweep([e, [s*c[0]*1.25, c[1]-0.005, c[2]-0.004], [s*c[0], c[1], c[2]], [s*0.014, sterY(6)-0.005, sterZ(6)]], 0.0034, { rad:8 }), CART);
-      }
-    });
-  }
-  // hrudná kosť
-  const yTop = sterY(0) + 0.01, yBot = sterY(6) - 0.01, zTop = sterZ(0) - 0.002, zBot = sterZ(6) + 0.002;
-  const ang = -Math.atan2(zBot - zTop, yTop - yBot);
-  put('hrudnik', tf(blob(0.016, (yTop-yBot)/2, 0.0075, v => { if (v.y > 0.55) v.x *= 1.5; }), [0, (yTop+yBot)/2, (zTop+zBot)/2], [ang, 0, 0]), BONE);
-  put('hrudnik', tf(blob(0.006, 0.014, 0.004), [0, yBot - 0.012, zBot + 0.004], [ang, 0, 0]), CART);
-}
-
-// plecový pletenec a horné končatiny
-sides(s => {
-  put('klucna', sweep([[s*0.016,1.392,0.06],[s*0.07,1.41,0.068],[s*0.13,1.432,0.03],[s*0.172,1.436,-0.008]], t => 0.0055 + 0.0015*Math.abs(t-0.5)*2, { rad:10 }), BONE);
-  // lopatka
-  const sh = new THREE.Shape([new THREE.Vector2(-0.035,0.0), new THREE.Vector2(0.04,-0.004), new THREE.Vector2(0.03,-0.03), new THREE.Vector2(-0.018,-0.13), new THREE.Vector2(-0.04,-0.05)]);
-  const sg = new THREE.ExtrudeGeometry(sh, { depth:0.004, bevelEnabled:true, bevelThickness:0.0015, bevelSize:0.0025, bevelSegments:2, curveSegments:4 });
-  tf(sg, [0.098, 1.405, -0.112], [0, 0.42, 0]); put('lopatka', s > 0 ? sg : mir(sg), BONE);
-  put('lopatka', sweep([[s*0.066,1.388,-0.117],[s*0.12,1.412,-0.1],[s*0.163,1.437,-0.045],[s*0.178,1.442,-0.012]], 0.0045, { rad:8 }), BONE);
-  put('lopatka', sweep([[s*0.135,1.395,-0.06],[s*0.15,1.405,-0.01],[s*0.14,1.41,0.012]], 0.0035, { rad:8 }), BONE);
-  // ramenná kosť
-  put('ramenna', tf(new THREE.SphereGeometry(0.023, 20, 16), [s*0.182, 1.41, -0.012]), BONE);
-  put('ramenna', tf(new THREE.SphereGeometry(0.014, 14, 10), [s*0.198, 1.405, 0.004]), BONE);
-  put('ramenna', sweep([[s*0.186,1.4,-0.012],[s*0.21,1.27,-0.012],[s*0.231,1.15,-0.012]], t => 0.0085*(1 + 0.5*g2((1-t)/0.12)), { rad:12 }), BONE);
-  put('ramenna', tf(blob(0.022, 0.011, 0.013), [s*0.234, 1.137, -0.012], [0, 0, -s*0.15]), BONE);
-  // predlaktie
-  put('predlaktie', sweep([[s*0.247,1.125,0.0],[s*0.27,1.0,0.012],[s*0.302,0.876,0.012]], t => 0.0055*(1 + 0.9*g2((1-t)/0.08) + 0.3*g2(t/0.06)), { rad:10 }), BONE);
-  put('predlaktie', sweep([[s*0.224,1.145,-0.022],[s*0.229,1.12,-0.017],[s*0.255,1.0,-0.005],[s*0.281,0.876,0.0]], t => 0.0058*(1 + 0.9*g2(t/0.1) + 0.3*g2((1-t)/0.06)), { rad:10 }), BONE);
-  // ruka
-  for (let k = 0; k < 8; k++) put('ruka_kosti', tf(new THREE.SphereGeometry(0.0055, 10, 8), [s*(0.278 + (k%4)*0.0095), k < 4 ? 0.866 : 0.853, 0.008 + (k%2)*0.002]), BONE);
-  const fx = [-0.022, -0.0075, 0.0075, 0.022], fl = [0.042, 0.052, 0.056, 0.052];
-  fx.forEach((x, i) => {
-    const b0 = [s*(0.294 + x*0.55), 0.845, 0.009], b1 = [s*(0.294 + x), 0.79, 0.012];
-    put('ruka_kosti', sweep([b0, b1], t => 0.0032*(1 + 0.5*g2((1-t)/0.15)), { rad:8 }), BONE);
-    const segs = [0.42, 0.33, 0.25]; let y = 0.787, xx = s*(0.294 + x);
-    for (const sgm of segs){
-      const l = fl[i]*sgm, y2 = y - l + 0.002, x2 = xx + s*x*0.03;
-      put('ruka_kosti', sweep([[xx, y, 0.013], [x2, y2, 0.015]], t => 0.0027*(1 + 0.35*g2(t/0.15)), { rad:8 }), BONE);
-      y = y2 - 0.002; xx = x2;
-    }
-  });
-  put('ruka_kosti', sweep([[s*0.306,0.85,0.012],[s*0.326,0.812,0.022]], 0.0035, { rad:8 }), BONE);
-  put('ruka_kosti', sweep([[s*0.329,0.808,0.024],[s*0.341,0.785,0.03]], 0.003, { rad:8 }), BONE);
-  put('ruka_kosti', sweep([[s*0.343,0.781,0.031],[s*0.351,0.763,0.035]], 0.0027, { rad:8 }), BONE);
-});
-
-// panva
-{
-  const il = new THREE.SphereGeometry(1, 24, 16, Math.PI - 0.9, 2.0, 0.45, 1.55);
-  tf(il, [0.035, 0.955, -0.02], [0, 0, 0], [0.1, 0.08, 0.07]);
-  const crest = [];
-  for (let k = 0; k <= 12; k++){ const ph = Math.PI - 0.9 + 2.0*k/12, th = 0.45;
-    crest.push([0.035 - 0.1*Math.cos(ph)*Math.sin(th), 0.955 + 0.08*Math.cos(th), -0.02 + 0.07*Math.sin(ph)*Math.sin(th)]); }
-  const crestG = sweep(crest, 0.0045, { rad:8 });
-  sides(s => {
-    put('panva', s > 0 ? il.clone() : mir(il), BONE);
-    put('panva', s > 0 ? crestG.clone() : mir(crestG), BONE);
-    put('panva', tf(new THREE.TorusGeometry(0.026, 0.0065, 8, 24), [s*0.088, 0.905, 0.0], [0, Math.PI/2, 0]), BONE);
-    put('panva', sweep([[s*0.07,0.93,0.02],[s*0.035,0.875,0.06],[s*0.012,0.845,0.064],[s*0.03,0.815,0.04],[s*0.065,0.8,0.0],[s*0.088,0.82,-0.025],[s*0.095,0.875,-0.02]],
-      0.0095, { closed:true, rad:10 }), BONE);
-  });
-  put('panva', tf(blob(0.01, 0.016, 0.008), [0, 0.845, 0.066]), CART);
-}
-
-// dolné končatiny
-sides(s => {
-  put('stehenna', tf(new THREE.SphereGeometry(0.022, 20, 16), [s*0.086, 0.905, 0.0]), BONE);
-  put('stehenna', sweep([[s*0.086,0.905,0],[s*0.118,0.884,0]], 0.0115, { rad:10 }), BONE);
-  put('stehenna', tf(blob(0.015, 0.02, 0.016), [s*0.126, 0.888, -0.006]), BONE);
-  put('stehenna', sweep([[s*0.12,0.885,0],[s*0.108,0.7,0.008],[s*0.091,0.525,0]], t => 0.0105*(1 + 0.25*g2((1-t)/0.15)), { rad:14 }), BONE);
-  put('stehenna', tf(new THREE.SphereGeometry(0.0175, 16, 12), [s*0.078, 0.508, -0.005]), BONE);
-  put('stehenna', tf(new THREE.SphereGeometry(0.0175, 16, 12), [s*0.102, 0.508, -0.005]), BONE);
-  put('jablcko', tf(blob(0.015, 0.019, 0.008, v => { if (v.y < 0) v.x *= 1 + 0.4*v.y; }), [s*0.09, 0.515, 0.03]), BONE);
-  put('predkolenie', tf(blob(0.03, 0.012, 0.022), [s*0.089, 0.482, 0.0]), BONE);
-  put('predkolenie', sweep([[s*0.088,0.48,0.003],[s*0.086,0.3,0.004],[s*0.082,0.085,0]], t => 0.0095*(1 + 0.6*g2(t/0.1) + 0.35*g2((1-t)/0.07)), { rad:14 }), BONE);
-  put('predkolenie', tf(blob(0.009, 0.012, 0.009), [s*0.073, 0.072, 0.0]), BONE);
-  put('predkolenie', sweep([[s*0.113,0.465,-0.012],[s*0.113,0.27,-0.01],[s*0.108,0.075,-0.008]], t => 0.0048*(1 + 0.4*g2(t/0.08) + 0.6*g2((1-t)/0.07)), { rad:10 }), BONE);
-  // noha
-  put('noha_kosti', tf(blob(0.017, 0.013, 0.022), [s*0.088, 0.055, 0.0]), BONE);
-  put('noha_kosti', tf(blob(0.016, 0.02, 0.03), [s*0.088, 0.03, -0.03], [0.3, 0, 0]), BONE);
-  put('noha_kosti', tf(blob(0.026, 0.012, 0.02), [s*0.088, 0.04, 0.032]), BONE);
-  for (let i = 0; i < 5; i++){
-    const x = s*(0.071 + i*0.0095), xb = s*(0.078 + i*0.006), r = i === 0 ? 0.0058 : 0.0042;
-    put('noha_kosti', sweep([[xb, 0.04, 0.05],[x, 0.016, 0.112]], t => r*(1 + 0.4*g2((1-t)/0.15)), { rad:8 }), BONE);
-    const segs = i === 0 ? [0.022, 0.018] : [0.014, 0.009, 0.007];
-    let z = 0.116;
-    for (const l of segs){ put('noha_kosti', sweep([[x, 0.015, z],[x, 0.012, z + l]], r*0.8, { rad:8 }), BONE); z += l + 0.003; }
-  }
-});
-
-/* ---------------- SVALY ---------------- */
-const MO = { k:'mus', map:FIBER, rough:0.6 };
-sides(s => {
-  put('prsny', tf(blob(0.076, 0.056, 0.011, v => {
-    v.x = sq(v.x, 0.7); v.y = sq(v.y, 0.75);
-    if (v.z < 0) v.z *= 0.3;
-    const lat = Math.max(0, s*v.x); v.y = v.y*(1 - 0.65*lat) + 0.45*lat; v.z *= 1 - 0.4*lat;
-    v.z -= 2.6*v.x*v.x;
-  }), [s*0.074, 1.335, 0.103], [0, s*0.12, 0]), MUS, MO);
-  put('deltovy', tf(blob(0.042, 0.066, 0.052, v => { if (v.y < 0){ const k = 1 + 0.5*v.y; v.x *= k; v.z *= k; } }), [s*0.198, 1.39, -0.004], [0, 0, s*0.22]), MUS, MO);
-  put('biceps', sweep([[s*0.196,1.36,0.02],[s*0.215,1.25,0.031],[s*0.236,1.15,0.022]], t => 0.005 + 0.019*bump(t,0,1), { rad:16 }), MUS, MO);
-  put('triceps', sweep([[s*0.19,1.37,-0.034],[s*0.214,1.25,-0.04],[s*0.232,1.14,-0.032]], t => 0.005 + 0.021*bump(t,0,1), { rad:16 }), MUS, MO);
-  put('predlaktie_svaly', sweep([[s*0.24,1.13,0.012],[s*0.27,1.0,0.02],[s*0.296,0.885,0.014]], t => 0.004 + 0.018*Math.pow(Math.sin(Math.PI*Math.pow(t,0.6)),0.8), { rad:14 }), MUS, MO);
-  put('predlaktie_svaly', sweep([[s*0.232,1.13,-0.016],[s*0.26,1.0,-0.009],[s*0.29,0.885,0.0]], t => 0.004 + 0.017*Math.pow(Math.sin(Math.PI*Math.pow(t,0.6)),0.8), { rad:14 }), MUS, MO);
-  // brušné svaly – priamy (segmenty) + šikmé
-  [[1.21,0.026],[1.152,0.026],[1.094,0.026],[0.99,0.07]].forEach(([y, hh]) => {
-    const z = skinR(y)*ZS - 0.011;
-    put('brusne', tf(blob(0.024, hh, 0.0065, v => { v.x = sq(v.x, 0.45); v.y = sq(v.y, 0.4); if (v.y < 0 && hh > 0.05) v.x *= 1 + 0.45*v.y; v.z -= 1.2*v.x*v.x; }), [s*0.028, y, z], [0, s*0.12, 0]), MUS, MO);
-  });
-  put('brusne', tf(blob(0.028, 0.085, 0.045, v => { if (v.x*s < 0) v.x *= 0.45; v.y = sq(v.y, 0.7); }), [s*0.108, 1.07, 0.035], [0, s*0.6, 0]), MUS, MO);
-  put('trapezovy', tf(blob(0.065, 0.03, 0.022), [s*0.06, 1.455, -0.055], [0.3, 0, -s*0.45]), MUS, MO);
-  put('trapezovy', tf(blob(0.05, 0.1, 0.011), [s*0.045, 1.335, -0.106], [0, -s*0.25, -s*0.3]), MUS, MO);
-  put('najsirsi', tf(blob(0.06, 0.12, 0.013), [s*0.098, 1.2, -0.095], [0, -s*0.55, s*0.25]), MUS, MO);
-  put('sedaci', tf(blob(0.068, 0.078, 0.045), [s*0.075, 0.875, -0.085], [0, 0, s*0.2]), MUS, MO);
-  put('stvorhlavy', sweep([[s*0.103,0.88,0.022],[s*0.103,0.7,0.03],[s*0.092,0.535,0.026]], t => 0.012 + 0.036*bump(t,0,1), { rad:20 }), MUS, MO);
-  put('stvorhlavy', sweep([[s*0.092,0.535,0.026],[s*0.09,0.51,0.042],[s*0.09,0.48,0.03]], 0.006, { rad:10 }), TENDON);
-  put('zadne_stehno', sweep([[s*0.088,0.86,-0.042],[s*0.095,0.7,-0.038],[s*0.09,0.53,-0.028]], t => 0.01 + 0.03*bump(t,0,1), { rad:18 }), MUS, MO);
-  put('lytkovy', sweep([[s*0.09,0.475,-0.028],[s*0.091,0.36,-0.038],[s*0.088,0.2,-0.024]], t => 0.007 + 0.03*Math.pow(Math.sin(Math.PI*Math.pow(t,0.7)),0.6), { rad:18 }), MUS, MO);
-  put('lytkovy', sweep([[s*0.088,0.2,-0.024],[s*0.088,0.1,-0.03],[s*0.088,0.045,-0.052]], t => 0.0045 + 0.002*t, { rad:10 }), TENDON);
-  put('kyvac', sweep([[s*0.058,1.6,-0.018],[s*0.042,1.52,0.018],[s*0.016,1.44,0.064]], t => 0.0055 + 0.004*Math.sin(Math.PI*t), { rad:12 }), MUS, MO);
-});
-
-/* ---------------- TRÁVIACA ---------------- */
-put('jazyk', tf(blob(0.021, 0.0095, 0.034, v => { if (v.z > 0) { v.x *= 1 - 0.4*v.z; } if (v.y < 0) v.y *= 0.6; }), [0, 1.562, 0.038]), '#e07f86');
-put('hltan', sweep([[0,1.612,0.022],[0,1.585,0.006],[0,1.55,0.004],[0,1.502,0.008]], t => 0.0095 - 0.002*t, { rad:12 }), '#d97a7a');
-put('pazerak', sweep([[0,1.502,0.008],[0,1.42,-0.002],[0.003,1.35,-0.028],[0.008,1.25,-0.038],[0.02,1.19,-0.022],[0.035,1.165,-0.002]], 0.0066, { rad:12 }), '#d98479');
-put('zaludok', sweep([[0.035,1.163,0.0],[0.068,1.168,0.008],[0.088,1.135,0.028],[0.077,1.085,0.048],[0.042,1.058,0.06],[0.006,1.062,0.06],[-0.02,1.077,0.05]],
-  t => t < 0.15 ? 0.012 + 0.024*(t/0.15) : t < 0.5 ? 0.036 : 0.036 - 0.024*Math.pow((t-0.5)/0.5, 1.2), { rad:24, seg:120 }), '#e0957f');
-put('pecen', tf(blob(0.1, 0.055, 0.07, v => { const f = 0.42 + 0.58*(1 - (v.x+1)/2); v.y *= f; v.z *= 0.7 + 0.3*f; if (v.y < 0) v.y *= 0.6; }, 56, 36), [-0.035, 1.128, 0.022], [0, 0, 0.08]), '#7b2b22');
-put('zlcnik', tf(blob(0.011, 0.024, 0.011, v => { if (v.y > 0) { v.x *= 1 - 0.4*v.y; v.z *= 1 - 0.4*v.y; } }), [-0.058, 1.085, 0.075], [0.5, 0, 0]), '#5c8a3a');
-put('pankreas', sweep([[-0.034,1.045,0.0],[0.0,1.052,-0.012],[0.04,1.07,-0.022],[0.078,1.09,-0.03],[0.1,1.1,-0.035]], t => 0.014*(1 - 0.55*t), { rad:16 }), '#e9c27a');
-{
-  // tenké črevo
-  const R = rng(7);
-  const ip = [[-0.02,1.077,0.05],[-0.04,1.07,0.032],[-0.048,1.04,0.015],[-0.035,1.012,0.01],[0.0,1.006,0.01],[0.025,1.015,0.012]];
-  const layersZ = [0.02, 0.045, 0.07], rowsY = [0.99, 0.966, 0.942, 0.918, 0.896];
-  layersZ.forEach((z, L) => {
-    const rows = L % 2 ? [...rowsY].reverse() : rowsY;
-    rows.forEach((y, ri) => {
-      const dir = (ri + L) % 2 ? -1 : 1;
-      for (let k = 0; k < 8; k++){
-        const u = dir > 0 ? k/7 : 1 - k/7, x = -0.062 + 0.124*u;
-        ip.push([x + (R()-0.5)*0.008, y + 0.007*Math.sin(u*9 + ri*2 + L) + (R()-0.5)*0.006, z + 0.008*Math.cos(u*7 + ri) + (R()-0.5)*0.008]);
-      }
-    });
-  });
-  ip.push([-0.075, 0.912, 0.048], [-0.086, 0.922, 0.04]);
-  put('tenke', sweep(ip, t => t < 0.06 ? 0.0105 : 0.0092, { seg:1500, rad:10 }), '#e8a291');
-  // hrubé črevo
-  const cp = [[-0.085,0.895,0.035],[-0.095,0.94,0.036],[-0.1,1.0,0.03],[-0.095,1.05,0.036],[-0.07,1.062,0.06],[-0.03,1.035,0.088],[0.02,1.028,0.088],
-    [0.07,1.062,0.066],[0.1,1.082,0.03],[0.11,1.04,0.02],[0.11,0.97,0.02],[0.1,0.922,0.03],[0.07,0.884,0.042],[0.035,0.888,0.0],[0.01,0.88,-0.04],[0.0,0.84,-0.06],[0.0,0.8,-0.05]];
-  put('hrube', sweep(cp, t => (t > 0.86 ? 0.015 : 0.019)*(1 + 0.12*Math.sin(t*230)), { seg:700, rad:16 }), '#c98a78');
-  put('hrube', sweep([[-0.085,0.902,0.028],[-0.077,0.88,0.03],[-0.07,0.866,0.036]], t => 0.0036 - 0.001*t, { rad:8 }), '#c98a78');
-}
-
-/* ---------------- DÝCHACIA ---------------- */
-put('nos', tf(blob(0.009, 0.018, 0.022), [0, 1.616, 0.058]), '#e88aa0');
-put('hrtan', tf(blob(0.017, 0.022, 0.016), [0, 1.515, 0.038]), '#e2cbb8');
-put('hrtan', tf(blob(0.009, 0.01, 0.006), [0, 1.522, 0.054]), '#e2cbb8');
-put('hrtan', tf(blob(0.008, 0.012, 0.003), [0, 1.545, 0.03], [-0.4, 0, 0]), '#e2cbb8');
-const TR_TOP = [0, 1.495, 0.034], CARINA = [0, 1.362, 0.006];
-put('priedusnica', sweep([TR_TOP, [0, 1.43, 0.024], CARINA], 0.0085, { rad:14 }), '#e8c8c2');
-{
-  const tr = new THREE.CatmullRomCurve3([TR_TOP, [0,1.43,0.024], CARINA].map(A));
-  for (let k = 1; k < 12; k++){
-    const t = k/12, p = tr.getPointAt(t), tg = tr.getTangentAt(t);
-    const g = new THREE.TorusGeometry(0.0089, 0.0016, 6, 20);
-    g.applyMatrix4(new THREE.Matrix4().compose(p, new THREE.Quaternion().setFromUnitVectors(new V3(0,0,1), tg), new V3(1,1,1)));
-    put('priedusnica', g, '#f5e6df');
-  }
-}
-const LUNG = { c:{ 1:new V3(0.077,1.305,-0.005), '-1':new V3(-0.077,1.305,-0.005) }, r:new V3(0.052,0.115,0.078) };
-sides(s => {
-  const g = blob(LUNG.r.x, LUNG.r.y, LUNG.r.z, v => {
-    if (v.y > 0){ const k = 1 - 0.5*v.y*v.y; v.x *= k; v.z *= k; }
-    if (v.y < -0.5) v.y = -0.5 + (v.y + 0.5)*0.35;
-    if (s*v.x < 0) v.x *= 0.6;
-    if (s > 0 && v.x < 0 && v.z > 0.1 && v.y < 0.25) v.x *= 0.25;
-    if (v.z < 0) v.z *= 1.08;
-  }, 48, 36);
-  g.translate(LUNG.c[s].x, LUNG.c[s].y, LUNG.c[s].z);
-  put('pluca', g, '#f2a2ad', { k:'lung' });
-  // prieduškový strom
-  const R = rng(s > 0 ? 11 : 23);
-  const out = [];
-  const c = LUNG.c[s], rr = LUNG.r;
-  function br(p, dir, len, r, depth){
-    let e = p.clone().addScaledVector(dir, len);
-    const rel = e.clone().sub(c).divide(rr);
-    if (rel.length() > 0.85){ const toC = c.clone().sub(p).normalize(); dir = dir.clone().lerp(toC, 0.65).normalize(); e = p.clone().addScaledVector(dir, len); }
-    out.push(sweep([p, p.clone().lerp(e, 0.5), e], t => r*(1 - 0.2*t), { seg:3, rad:6, caps:false }));
-    if (depth <= 0) return;
-    const axis = new V3(R()-0.5, R()-0.5, R()-0.5).cross(dir).normalize();
-    for (let k = 0; k < 2; k++){
-      const ang = (0.35 + R()*0.35) * (k ? 1 : -0.85);
-      const nd = dir.clone().applyAxisAngle(axis, ang).normalize();
-      br(e, nd, len*(0.72 + R()*0.1), r*0.72, depth - 1);
-    }
-  }
-  const p0 = A(CARINA), p1 = new V3(s*0.035, 1.338, 0.0);
-  out.push(sweep([p0, p0.clone().lerp(p1, 0.5), p1], 0.0062, { seg:4, rad:10, caps:false }));
-  br(p1, new V3(s*0.3, 0.55, 0.05).normalize(), 0.032, 0.0045, 5);
-  br(p1, new V3(s*0.45, -0.25, 0.35).normalize(), 0.035, 0.0048, 5);
-  br(p1, new V3(s*0.35, -0.7, -0.3).normalize(), 0.04, 0.005, 6);
-  out.forEach(g => put('priedusnica', g, '#f3d8cf'));
-});
-{
-  const g = new THREE.SphereGeometry(1, 48, 20, 0, Math.PI*2, 0, 1.5);
-  const p = g.attributes.position, v = new V3();
-  for (let i = 0; i < p.count; i++){ v.fromBufferAttribute(p, i); v.y -= 0.18*g2(v.x/0.25); p.setXYZ(i, v.x*0.135, v.y*0.065, v.z*0.1); }
-  g.computeVertexNormals();
-  put('branica', tf(g, [0, 1.13, -0.008]), '#b8574d', MO);
-}
-
-/* ---------------- OBEHOVÁ ---------------- */
-const HEART_M = new THREE.Matrix4().compose(new V3(0.015, 1.262, 0.038), new THREE.Quaternion().setFromEuler(new THREE.Euler(-0.35, 0, 0.55)), new V3(1,1,1));
-const HR = [0.045, 0.06, 0.042];
-function heartDef(v){ if (v.y < 0){ const k = 1 + 0.55*v.y; v.x *= k; v.z *= k; } if (v.y > 0.6) v.y = 0.6 + (v.y - 0.6)*0.6; }
-function heartSurf(d){ const v = A(d).normalize(); heartDef(v); v.set(v.x*HR[0]*1.04, v.y*HR[1]*1.04, v.z*HR[2]*1.04); return v.applyMatrix4(HEART_M); }
-put('srdce', blob(HR[0], HR[1], HR[2], heartDef, 48, 36).applyMatrix4(HEART_M), '#a8222e');
-put('srdce', tf(blob(0.022, 0.024, 0.02), [-0.026, 1.29, 0.032]), '#8c1f2b');
-put('srdce', tf(blob(0.02, 0.018, 0.018), [0.018, 1.298, 0.0]), '#8c1f2b');
-put('srdce', tf(blob(0.012, 0.009, 0.012), [0.04, 1.305, 0.04], [0, 0, 0.5]), '#8c1f2b');
-for (const path of [
-  [[0.3,0.7,0.65],[0.35,0.2,0.9],[0.3,-0.4,0.85],[0.1,-0.9,0.4]],
-  [[-0.5,0.6,0.6],[-0.85,0.2,0.4],[-0.9,-0.2,0.0],[-0.6,-0.3,-0.7]],
-  [[0.5,0.6,0.5],[0.9,0.3,0.0],[0.7,0.2,-0.7]],
-]) put('srdce', sweep(path.map(heartSurf), 0.0018, { rad:6 }), '#ff5a4e');
-for (const path of [ [[0.0,0.5,0.85],[-0.1,0.0,0.95],[-0.15,-0.6,0.75]], [[0.6,0.4,0.6],[0.8,-0.2,0.5],[0.5,-0.7,0.4]] ])
-  put('srdce', sweep(path.map(heartSurf), 0.0016, { rad:6 }), '#5577dd');
-// pľúcnica (odkysličená krv – modrá) a pľúcne žily (okysličená – červená)
-put('srdce', sweep([[0.0,1.285,0.066],[0.012,1.322,0.06],[0.02,1.345,0.032]], 0.0095, { rad:14 }), '#3d62c9');
-put('srdce', sweep([[0.02,1.345,0.032],[0.045,1.342,0.012],[0.062,1.33,0.0]], 0.0065, { rad:10 }), '#3d62c9');
-put('srdce', sweep([[0.02,1.345,0.032],[-0.005,1.352,0.0],[-0.045,1.335,0.0],[-0.062,1.325,0.0]], 0.0065, { rad:10 }), '#3d62c9');
-sides(s => { for (const dy of [0.012, -0.012]) put('srdce', sweep([[s*0.06,1.3+dy,-0.02],[s*0.035,1.298+dy,-0.012],[0.012+s*0.008,1.298,-0.005]], 0.0042, { rad:8 }), '#d03a3a'); });
-
-put('aorta', sweep([[0.004,1.29,0.04],[0.006,1.345,0.045],[0.02,1.372,0.03],[0.034,1.37,-0.005],[0.034,1.335,-0.04],[0.026,1.25,-0.05],[0.016,1.12,-0.046],[0.006,0.985,-0.035]],
-  t => 0.0115 - 0.003*t, { rad:18 }), '#e0303a');
-put('dute_zily', sweep([[-0.028,1.432,0.02],[-0.031,1.36,0.026],[-0.03,1.3,0.032]], 0.0078, { rad:14 }), '#3053c0');
-put('dute_zily', sweep([[-0.026,1.24,0.025],[-0.03,1.18,0.0],[-0.025,1.1,-0.034],[-0.02,0.99,-0.03]], 0.0088, { rad:14 }), '#3053c0');
-
-// tepny
-{
-  const T = (pts, r) => put('tepny', sweep(pts, typeof r === 'number' ? t => r*(1 - 0.35*t) : r, { rad:8 }), ART);
-  const armA = s => [[s*0.07,1.44,0.02],[s*0.14,1.42,0.0],[s*0.19,1.37,0.0],[s*0.21,1.27,0.005],[s*0.232,1.15,0.008]];
-  // pravá strana – brachiocefalický kmeň
-  T([[0.006,1.37,0.035],[-0.012,1.405,0.032],[-0.02,1.425,0.03],[-0.07,1.44,0.02]], 0.0055);
-  T([[0.022,1.373,0.022],[0.022,1.43,0.03]], 0.004);                          // ľavá krkavica začiatok
-  T([[0.032,1.37,0.0],[0.045,1.42,0.012],[0.07,1.44,0.02]], 0.0048);            // ľavá podkľúčna
-  sides(s => {
-    T(armA(s), 0.0045);
-    T([[s*0.232,1.15,0.008],[s*0.26,1.0,0.018],[s*0.292,0.88,0.018],[s*0.3,0.83,0.02],[s*0.282,0.805,0.02],[s*0.27,0.81,0.018]], 0.0032); // vretenná
-    T([[s*0.232,1.15,0.008],[s*0.245,1.0,0.0],[s*0.275,0.88,0.006],[s*0.28,0.83,0.016]], 0.003);   // lakťová
-    T([[s*0.022,1.43,0.03],[s*0.025,1.5,0.03],[s*0.03,1.575,0.02],[s*0.036,1.62,0.012]], 0.0042);    // krkavica
-    T([[s*0.03,1.568,0.024],[s*0.046,1.578,0.058],[s*0.03,1.6,0.084]], 0.0022);                    // tvárová
-    T([[s*0.034,1.6,0.014],[s*0.074,1.632,0.0],[s*0.07,1.69,0.005],[s*0.05,1.73,0.0]], 0.0022);      // spánková
-    T([[0.006,0.985,-0.035],[s*0.04,0.94,-0.02],[s*0.07,0.89,0.022],[s*0.086,0.82,0.03],[s*0.097,0.66,0.02],[s*0.093,0.52,-0.026],
-       [s*0.09,0.4,-0.02],[s*0.087,0.12,-0.016],[s*0.085,0.06,0.02],[s*0.08,0.032,0.08],[s*0.075,0.025,0.12]], t => 0.006*(1 - 0.6*t)); // stehenná
-    T([[s*0.09,0.42,-0.018],[s*0.1,0.4,0.015],[s*0.095,0.2,0.02],[s*0.09,0.06,0.03]], 0.0024);       // predná píšťalová
-    T([[0.01,1.045,-0.044],[s*0.04,1.052,-0.056]], 0.003);                                          // obličková
-    T([[s*0.04,0.94,-0.02],[s*0.035,0.9,-0.05],[s*0.02,0.86,-0.04]], 0.003);                        // vnútorná bedrová
-  });
-  T([[0.012,1.1,-0.043],[0.01,1.085,-0.01],[0.0,1.08,0.012]], 0.0035);
-  T([[0.01,1.07,-0.041],[0.0,1.03,0.0],[-0.01,0.95,0.03]], 0.0035);
-}
-// žily
-{
-  const Z = (pts, r) => put('zily', sweep(pts, typeof r === 'number' ? t => r*(1 - 0.3*t) : r, { rad:8 }), VEIN);
-  sides(s => {
-    Z([[-0.028,1.432,0.02],[s*0.03,1.432,0.024],[s*0.08,1.432,0.018],[s*0.145,1.412,-0.008],[s*0.196,1.365,-0.008],[s*0.218,1.26,-0.004],[s*0.24,1.15,-0.002],[s*0.262,1.0,0.008],[s*0.295,0.88,0.012]], 0.0048);
-    Z([[s*0.15,1.43,0.024],[s*0.205,1.33,0.035],[s*0.248,1.13,0.026],[s*0.282,0.98,0.03],[s*0.3,0.885,0.026],[s*0.3,0.84,0.02]], 0.0028); // hlavová (cefalická)
-    Z([[s*0.03,1.432,0.022],[s*0.036,1.5,0.012],[s*0.038,1.57,0.0],[s*0.044,1.615,-0.006]], 0.0052);        // jugulárna
-    Z([[s*0.037,1.56,0.004],[s*0.05,1.575,0.052],[s*0.036,1.597,0.08]], 0.0022);
-    Z([[-0.02,0.99,-0.03],[s*0.035,0.94,-0.028],[s*0.062,0.89,0.018],[s*0.075,0.82,0.03],[s*0.087,0.66,0.012],[s*0.082,0.52,-0.032],
-       [s*0.082,0.4,-0.026],[s*0.08,0.12,-0.022],[s*0.08,0.06,0.012],[s*0.09,0.035,0.07]], t => 0.0065*(1 - 0.55*t));
-    Z([[s*0.068,0.875,0.04],[s*0.064,0.7,0.012],[s*0.072,0.5,-0.024],[s*0.074,0.3,-0.012],[s*0.071,0.075,0.026],[s*0.075,0.045,0.07]], 0.003); // veľká skrytá
-    Z([[-0.024,1.05,-0.036],[s*0.04,1.04,-0.052]], 0.0034);
-  });
-}
-put('slezina', tf(blob(0.022, 0.044, 0.028, v => { if (v.x < 0) v.x *= 0.5; }), [0.108, 1.118, -0.042], [0, -0.4, -0.2]), '#7a3456');
-
-/* ---------------- NERVOVÁ ---------------- */
-function gyri(v, s){
-  if (s*v.x < 0) v.x *= 0.38;
-  if (v.y < -0.3) v.y = -0.3 + (v.y + 0.3)*0.55;
-  const n = Math.sin(13*v.x + 5*Math.sin(7*v.z) + 2*Math.sin(9*v.y)) * Math.sin(12*v.z + 5*Math.sin(8*v.y)) * Math.sin(11*v.y + 4*Math.sin(10*v.x));
-  const r = 1 - Math.abs(n); v.multiplyScalar(1 - 0.06*r*r*r);
-}
-sides(s => put('mozog', tf(blob(0.03, 0.044, 0.072, v => gyri(v, s), 128, 96), [s*0.0305, 1.664, -0.004]), '#eaa7a0'));
-put('mozocek', tf(blob(0.044, 0.025, 0.031, v => { v.multiplyScalar(1 - 0.035*Math.abs(Math.sin(38*v.y + 3*v.z))); if (Math.abs(v.x) < 0.15 && v.z < 0) v.z *= 0.8; }, 64, 48), [0, 1.616, -0.06]), '#d9918a');
-put('kmen', sweep([[0,1.652,-0.012],[0,1.625,-0.028],[0,1.598,-0.04],[0,1.585,-0.046]], t => 0.012 - 0.005*t, { rad:16 }), '#e3b2a2');
-{
-  const cp = []; for (let k = 0; k <= 30; k++){ const t = 0.02 + 0.76*k/30; const p = spine.getPointAt(t); cp.push([0, p.y, p.z - 0.018]); }
-  put('miecha', sweep(cp, t => 0.0055*(t < 0.9 ? 1 : 1 - (t-0.9)*6), { rad:12 }), '#f5d77a');
-  const endY = cp[cp.length-1][1];
-  for (let k = -3; k <= 3; k++){
-    const p0 = spine.getPointAt(0.8), p1 = spine.getPointAt(0.97);
-    put('nervy', sweep([[k*0.0015, endY, p0.z - 0.018],[k*0.003, (endY + p1.y)/2, p1.z - 0.02],[k*0.004, p1.y - 0.03, -0.085]], 0.0011, { rad:5 }), NERVE);
-  }
-}
-{
-  const N = (pts, r = 0.0022) => put('nervy', sweep(pts, r, { rad:7 }), NERVE);
-  sides(s => {
-    const pl = [[s*0.012,1.46,-0.045],[s*0.06,1.43,-0.02],[s*0.15,1.405,-0.006],[s*0.195,1.36,-0.008]];
-    N(pl, 0.003);
-    N([[s*0.195,1.36,-0.008],[s*0.222,1.2,0.002],[s*0.24,1.12,0.012],[s*0.27,1.0,0.015],[s*0.291,0.88,0.015],[s*0.294,0.82,0.016]]); // stredový
-    N([[s*0.195,1.36,-0.008],[s*0.214,1.2,-0.02],[s*0.222,1.135,-0.03],[s*0.25,1.0,-0.01],[s*0.275,0.88,0.005],[s*0.28,0.82,0.012]]); // lakťový
-    N([[s*0.195,1.36,-0.008],[s*0.208,1.27,-0.03],[s*0.244,1.15,-0.005],[s*0.28,1.0,0.0],[s*0.3,0.86,0.006]]);                      // vretenný
-    [-0.022, -0.0075, 0.0075, 0.022].forEach((x, i) => N([[s*(i < 2 ? 0.28 : 0.294), 0.82, 0.014],[s*(0.294 + x), 0.785, 0.018],[s*(0.294 + x*1.1), 0.735 - (i === 2 ? 0.01 : 0), 0.02]], 0.0012));
-    N([[s*0.3,0.86,0.006],[s*0.33,0.81,0.026],[s*0.348,0.77,0.036]], 0.0012);
-    // medzirebrové nervy
-    RIBPTS[s].forEach(pts => N(pts.slice(1).map(p => [p[0]*0.97, p[1] - 0.007, p[2]*0.97]), 0.0013));
-    // stehenný a sedací nerv
-    N([[s*0.015,1.03,-0.062],[s*0.05,0.97,-0.04],[s*0.075,0.88,0.026],[s*0.1,0.75,0.04],[s*0.1,0.6,0.03]], 0.0025);
-    N([[s*0.012,0.93,-0.08],[s*0.06,0.88,-0.075],[s*0.095,0.8,-0.05],[s*0.096,0.62,-0.042],[s*0.092,0.5,-0.036]], 0.0042);
-    N([[s*0.092,0.5,-0.036],[s*0.09,0.3,-0.03],[s*0.085,0.08,-0.02],[s*0.085,0.03,0.05],[s*0.08,0.022,0.12]], 0.0025);
-    N([[s*0.092,0.5,-0.036],[s*0.113,0.47,-0.016],[s*0.106,0.3,0.016],[s*0.095,0.08,0.03],[s*0.09,0.042,0.1]], 0.002);
-    // zrakový nerv
-    N([[s*0.032,1.636,0.062],[s*0.02,1.636,0.04],[s*0.004,1.636,0.026]], 0.0024);
-  });
-}
-
-/* ---------------- ZMYSLY ---------------- */
-sides(s => {
-  put('oko', tf(new THREE.SphereGeometry(0.012, 28, 20), [s*0.032, 1.636, 0.073]), '#f4f2ec');
-  put('oko', tf(new THREE.CylinderGeometry(0.0056, 0.0056, 0.0016, 28), [s*0.032, 1.636, 0.0845], [Math.PI/2, 0, 0]), '#3f7fd0');
-  put('oko', tf(new THREE.CylinderGeometry(0.0024, 0.0024, 0.0018, 20), [s*0.032, 1.636, 0.0853], [Math.PI/2, 0, 0]), '#111111');
-  put('oko', tf(new THREE.SphereGeometry(0.0062, 20, 12, 0, Math.PI*2, 0, 1.0), [s*0.032, 1.636, 0.0832], [Math.PI/2, 0, 0]), '#cfe6ff', { k:'glass' });
-});
-{
-  // ušnica – postavená pre ľavú stranu a zrkadlená
-  const pinna = [];
-  pinna.push(tf(new THREE.TorusGeometry(0.017, 0.0052, 10, 32, Math.PI*1.65), [0.084, 1.633, -0.012], [0, Math.PI/2, -1.8], [1, 1.2, 1]));
-  pinna.push(tf(blob(0.004, 0.009, 0.007), [0.085, 1.605, -0.002]));
-  pinna.push(tf(blob(0.004, 0.012, 0.009), [0.083, 1.632, -0.012]));
-  const inner = [];
-  inner.push(sweep([[0.086,1.626,-0.008],[0.078,1.623,-0.008],[0.071,1.621,-0.008]], 0.003, { rad:10 }));
-  inner.push(tf(new THREE.CylinderGeometry(0.0042, 0.0042, 0.0008, 18), [0.0705, 1.621, -0.008], [0, 0, Math.PI/2]));
-  const sp = []; for (let k = 0; k <= 70; k++){ const a = k/70*2.6*Math.PI*2, rr = 0.0058*(1 - k/85);
-    sp.push([0.058 + k*0.00004, 1.613 + Math.sin(a)*rr, -0.003 + Math.cos(a)*rr]); }
-  inner.push(sweep(sp, t => 0.0019 - 0.0009*t, { rad:8, seg:180 }));
-  for (const r of [[0,0,0],[Math.PI/2,0,0],[0,Math.PI/2,0]]) inner.push(tf(new THREE.TorusGeometry(0.0042, 0.0008, 6, 20), [0.064, 1.625, -0.016], r));
-  inner.push(tf(new THREE.SphereGeometry(0.0016, 8, 6), [0.069, 1.623, -0.006]));
-  inner.push(tf(new THREE.SphereGeometry(0.0014, 8, 6), [0.0665, 1.623, -0.008]));
-  inner.push(tf(new THREE.SphereGeometry(0.0013, 8, 6), [0.064, 1.622, -0.007]));
-  for (const g of pinna){ put('ucho', g, '#e3a689'); put('ucho', mir(g), '#e3a689'); }
-  for (const g of inner){ put('ucho', g, '#f1dca0'); put('ucho', mir(g), '#f1dca0'); }
-}
-
-/* ---------------- VYLUČOVACIA ---------------- */
-sides(s => {
-  const ky = s > 0 ? 1.066 : 1.05;
-  put('oblicky', tf(blob(0.022, 0.043, 0.017, v => { if (s*v.x < 0) v.x *= 0.5 + 0.5*Math.abs(v.y); }), [s*0.056, ky, -0.064], [0, -s*0.3, -s*0.15]), '#8c2f2c');
-  put('nadoblicky', tf(blob(0.014, 0.012, 0.008, v => { if (v.y > 0){ v.x *= 1 - 0.7*v.y; v.z *= 1 - 0.5*v.y; } }), [s*0.05, ky + 0.048, -0.06], [0, 0, -s*0.3]), '#e0aa38');
-  put('mocovody', sweep([[s*0.04,ky - 0.01,-0.056],[s*0.042,0.98,-0.046],[s*0.036,0.9,-0.02],[s*0.02,0.874,0.022]], 0.0028, { rad:8 }), '#d8b84e');
-});
-put('mechur', tf(blob(0.03, 0.025, 0.026, v => { if (v.y < -0.4) { v.x *= 0.85; } }), [0, 0.866, 0.034]), '#d6b247');
-put('mocovody', sweep([[0,0.842,0.04],[0,0.82,0.046],[0,0.795,0.052]], 0.003, { rad:8 }), '#d8b84e');
-
-/* ---------------- HORMONÁLNA ---------------- */
-put('hypofyza', tf(new THREE.SphereGeometry(0.0055, 16, 12), [0, 1.627, 0.012]), '#ec8f58');
-put('hypofyza', sweep([[0,1.632,0.012],[0,1.645,0.008]], 0.0018, { rad:6 }), '#ec8f58');
-sides(s => put('stitna', tf(blob(0.0085, 0.017, 0.009), [s*0.016, 1.476, 0.034], [0, 0, s*0.15]), '#b8414f'));
-put('stitna', tf(blob(0.012, 0.005, 0.0045), [0, 1.468, 0.043]), '#b8414f');
-sides(s => put('tymus', tf(blob(0.012, 0.028, 0.008), [s*0.01, 1.372, 0.044], [0, 0, s*0.1]), '#cfa0a5'));
-
-/* ======================================================================
-   ZLÚČENIE DO MESHOV + MATERIÁLY
-   ====================================================================== */
 const sysGroup = {}, organMeshes = {}, organMats = {};
 for (const s of SYS){ sysGroup[s.id] = new THREE.Group(); sysGroup[s.id].name = s.id; scene.add(sysGroup[s.id]); }
 let skinMat = null, lungMat = null;
-function makeMat(color, o){
-  if (o.k === 'skin') return skinMat = new THREE.MeshPhysicalMaterial({ color, roughness:0.55, transparent:true, opacity:0.25, depthWrite:false, sheen:0.6, sheenColor:new THREE.Color('#ffd9c4') });
-  if (o.k === 'lung') return lungMat = new THREE.MeshPhysicalMaterial({ color, roughness:0.65, transparent:true, opacity:0.62, depthWrite:false, sheen:0.5, sheenColor:new THREE.Color('#ffe0e8') });
-  if (o.k === 'glass') return new THREE.MeshPhysicalMaterial({ color, roughness:0.05, transparent:true, opacity:0.25, depthWrite:false, clearcoat:1 });
-  return new THREE.MeshPhysicalMaterial({ color, map:o.map || null, roughness:o.rough ?? 0.5, metalness:0, clearcoat:0.3, clearcoatRoughness:0.45, side:THREE.DoubleSide });
+function makeMat(id, color){
+  if (id === 'koza') return skinMat = new THREE.MeshPhysicalMaterial({ color, roughness:0.55, transparent:true, opacity:0.25, depthWrite:false, side:THREE.DoubleSide, sheen:0.6, sheenColor:new THREE.Color('#ffd9c4') });
+  if (id === 'pluca') return lungMat = new THREE.MeshPhysicalMaterial({ color, roughness:0.65, transparent:true, opacity:0.6, depthWrite:false, side:THREE.DoubleSide, sheen:0.5, sheenColor:new THREE.Color('#ffe0e8') });
+  const sys = ORG[id].s, bone = sys === 'kostra' || id === 'zuby', mus = sys === 'svaly';
+  if (mus) color = "#a3302a";
+  return new THREE.MeshPhysicalMaterial({ color, side:THREE.DoubleSide, roughness: bone ? 0.62 : mus ? 0.55 : 0.42,
+    clearcoat: bone ? 0.08 : 0.4, clearcoatRoughness:0.35, sheen: mus ? 0.25 : 0, sheenColor:new THREE.Color('#ff9a8a') });
 }
 const pickables = [];
-for (const p of parts.values()){
-  let geos = p.geos.filter(Boolean);
-  if (geos.some(g => !g.index)) geos = geos.map(g => g.index ? g.toNonIndexed() : g);
-  for (const g of geos){
-    for (const name of Object.keys(g.attributes)) if (!['position','normal','uv'].includes(name)) g.deleteAttribute(name);
-    if (!g.attributes.uv) g.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(g.attributes.position.count*2), 2));
-  }
-  const merged = geos.length > 1 ? mergeGeometries(geos, false) : geos[0];
-  const mat = makeMat(p.color, p.opts);
-  const list = merged ? [merged] : geos;
-  for (const g of list){
-    g.computeBoundingBox(); g.computeBoundingSphere();
-    const mesh = new THREE.Mesh(g, mat);
-    mesh.userData.id = p.id;
-    if (p.opts.k === 'skin') mesh.renderOrder = 10;
-    if (p.opts.k === 'lung') mesh.renderOrder = 5;
-    sysGroup[ORG[p.id].s].add(mesh);
-    (organMeshes[p.id] ||= []).push(mesh);
-    pickables.push(mesh);
-  }
-  (organMats[p.id] ||= []).push(mat);
+function addMesh(id, geo, mat){
+  geo.computeBoundingBox(); geo.computeBoundingSphere();
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.userData.id = id;
+  if (id === 'koza') mesh.renderOrder = 10;
+  if (id === 'pluca') mesh.renderOrder = 5;
+  sysGroup[ORG[id].s].add(mesh);
+  (organMeshes[id] ||= []).push(mesh);
+  (organMats[id] ||= []).push(mat);
+  pickables.push(mesh);
 }
-// stred a veľkosť každého orgánu
+async function fetchProgress(url, onp){
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(url + ': ' + r.status);
+  const total = +r.headers.get('content-length') || 0;
+  if (!r.body || !total){ const b = await r.arrayBuffer(); onp(1); return b; }
+  const reader = r.body.getReader(); const chunks = []; let got = 0;
+  for (;;){ const { done, value } = await reader.read(); if (done) break; chunks.push(value); got += value.length; onp(Math.min(1, got/total)); }
+  const out = new Uint8Array(got); let o = 0; for (const c of chunks){ out.set(c, o); o += c.length; }
+  return out.buffer;
+}
+{
+  const bar = document.getElementById('loadBar'), txt = document.getElementById('loadTxt');
+  try {
+    const manifest = await (await fetch('telo.json')).json();
+    const buf = await fetchProgress('telo.bin', p => { bar.style.width = (p*100).toFixed(0) + '%'; txt.textContent = `Načítavam anatomický model… ${(p*100).toFixed(0)} %`; });
+    txt.textContent = 'Pripravujem orgány…';
+    await new Promise(r => setTimeout(r, 20));
+    for (const m of manifest.meshes){
+      if (!ORG[m.id]) continue;
+      const q = new Uint16Array(buf, m.pos, m.nv*3), pos = new Float32Array(m.nv*3);
+      const [x0, y0, z0] = m.min, [sx, sy, sz] = m.size.map(v => v/65535);
+      for (let i = 0; i < m.nv*3; i += 3){ pos[i] = x0 + q[i]*sx; pos[i+1] = y0 + q[i+1]*sy; pos[i+2] = z0 + q[i+2]*sz; }
+      const idx = m.i32 ? new Uint32Array(buf, m.idx, m.nf*3) : new Uint16Array(buf, m.idx, m.nf*3);
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+      g.setIndex(new THREE.BufferAttribute(idx.slice(), 1));
+      g.computeVertexNormals();
+      addMesh(m.id, g, makeMat(m.id, m.color));
+    }
+  } catch (err){
+    txt.innerHTML = 'Model sa nepodarilo načítať. 😕<br><small>Otvor aplikáciu cez webovú adresu (napr. GitHub Pages), nie dvojklikom na súbor.<br>' + err.message + '</small>';
+    bar.parentElement.style.display = 'none';
+    throw err;
+  }
+}
+// štítna žľaza – v dátach BodyParts3D chýba, doplníme ju podľa polohy hrtana
+{
+  const hb = new THREE.Box3(); organMeshes.hrtan.forEach(m => hb.union(m.geometry.boundingBox));
+  const y = hb.min.y + 0.004, z = (hb.min.z + hb.max.z)/2 + 0.004;
+  const geos = [];
+  for (const s of [1, -1]){ const g = new THREE.SphereGeometry(1, 28, 20); g.scale(0.0065, 0.016, 0.0075); g.rotateZ(s*0.15); g.translate(s*0.013, y, z); geos.push(g); }
+  const ist = new THREE.SphereGeometry(1, 20, 12); ist.scale(0.009, 0.0045, 0.0038); ist.translate(0, y - 0.006, z + 0.008); geos.push(ist);
+  addMesh('stitna', mergeGeometries(geos), makeMat("stitna", "#a5525e"));
+}
 const organBox = {};
 for (const id in organMeshes){
   const b = new THREE.Box3(); organMeshes[id].forEach(m => b.union(m.geometry.boundingBox));
   organBox[id] = { box:b, c:b.getCenter(new V3()), r:b.getSize(new V3()).length()/2 };
 }
 const ORDER = {}; SYS.forEach(s => ORDER[s.id] = Object.keys(ORG).filter(id => ORG[id].s === s.id && organMeshes[id]));
+// akcelerácia výberu myšou – počíta sa postupne, aby sa stránka nezasekla
+{
+  const q = [...pickables].sort((a, b) => (a.userData.id === 'koza') - (b.userData.id === 'koza'));
+  const step = () => { const m = q.shift(); if (!m) return; if (!m.geometry.boundsTree) m.geometry.computeBoundsTree(); setTimeout(step, 0); };
+  setTimeout(step, 300);
+}
+const SKINBOX = organBox.koza.box;
+HOME.t.set(0, SKINBOX.max.y*0.53, 0); HOME.p.set(0, SKINBOX.max.y*0.58, 3.2);
+camera.position.copy(HOME.p); controls.target.copy(HOME.t);
 
 /* ======================================================================
    OVLÁDANIE – STAV
@@ -1286,7 +818,7 @@ let clipZ = 1;
 $('cut').addEventListener('input', () => {
   const v = +$('cut').value;
   if (v === 0){ renderer.clippingPlanes = []; clipZ = 1; $('cutVal').textContent = 'vypnutý'; return; }
-  clipZ = 0.13 - v/100*0.24; clipPlane.constant = clipZ; renderer.clippingPlanes = [clipPlane];
+  clipZ = SKINBOX.max.z + 0.005 - v/100*(SKINBOX.max.z - SKINBOX.min.z)*0.75; clipPlane.constant = clipZ; renderer.clippingPlanes = [clipPlane];
   $('cutVal').textContent = v + ' %';
 });
 let showLabels = false;
